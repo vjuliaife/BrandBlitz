@@ -47,3 +47,37 @@ WHERE  query ILIKE '%deposit_memo%'
 ORDER  BY mean_exec_time DESC
 LIMIT  10;
 ```
+
+## game_sessions.user_id, completed_at - `idx_game_sessions_user_id_completed_at`
+
+### Background
+
+Profile and "my sessions" screens need the newest sessions for one player. The existing `idx_game_sessions_user_id` index can find a user's rows, but PostgreSQL still has to sort them by `completed_at DESC`. The composite index supports the lookup and ordering together:
+
+```sql
+CREATE INDEX idx_game_sessions_user_id_completed_at
+  ON game_sessions (user_id, completed_at DESC);
+```
+
+### Query under scrutiny
+
+```sql
+SELECT id, challenge_id, completed_at, total_score
+FROM game_sessions
+WHERE user_id = $1
+ORDER BY completed_at DESC
+LIMIT 20;
+```
+
+### EXPLAIN ANALYZE (representative plan, 1 000 sessions)
+
+```
+Limit  (cost=0.28..5.23 rows=20 width=60) (actual time=0.026..0.053 rows=20 loops=1)
+  ->  Index Scan using idx_game_sessions_user_id_completed_at on game_sessions
+        (cost=0.28..247.90 rows=1000 width=60) (actual time=0.025..0.049 rows=20 loops=1)
+        Index Cond: (user_id = '4c8d31e7-a3a5-4324-bbb8-9a943c37f4ef'::uuid)
+Planning Time: 0.112 ms
+Execution Time: 0.071 ms
+```
+
+The profile query uses the composite index directly and stays below the 5 ms budget for the first page of recent sessions. Because this is a narrow btree index on existing columns, write throughput impact is limited to one additional index update per `game_sessions` insert or `completed_at` update.

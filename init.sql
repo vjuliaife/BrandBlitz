@@ -154,6 +154,7 @@ CREATE TABLE game_sessions (
 
 CREATE INDEX idx_game_sessions_challenge_id ON game_sessions (challenge_id);
 CREATE INDEX idx_game_sessions_user_id      ON game_sessions (user_id);
+CREATE INDEX idx_game_sessions_user_id_completed_at ON game_sessions (user_id, completed_at DESC);
 CREATE INDEX idx_game_sessions_status       ON game_sessions (status);
 CREATE INDEX idx_game_sessions_total_score  ON game_sessions (challenge_id, total_score DESC NULLS LAST)
   WHERE status = 'completed';
