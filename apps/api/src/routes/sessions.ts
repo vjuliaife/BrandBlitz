@@ -188,7 +188,7 @@ router.post(
       reactionTimeMs: body.reactionTimeMs,
     });
 
-    await recordRoundScore(session.id, round, score, body.selectedOption);
+    await recordRoundScore(session.id, round, score, body.selectedOption, body.reactionTimeMs);
 
     // On last round — finalize the session and stamp an integrity HMAC
     if (round === 3) {

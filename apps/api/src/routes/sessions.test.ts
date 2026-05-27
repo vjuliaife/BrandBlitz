@@ -139,7 +139,7 @@ describe("Sessions API", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.score).toBe(100);
-      expect(sessionQueries.recordRoundScore).toHaveBeenCalledWith("s1", 1, 100, "A");
+      expect(sessionQueries.recordRoundScore).toHaveBeenCalledWith("s1", 1, 100, "A", 500);
     });
 
     it("should accept timeout answer and score 0", async () => {
@@ -161,7 +161,7 @@ describe("Sessions API", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.score).toBe(0);
-      expect(sessionQueries.recordRoundScore).toHaveBeenCalledWith("s1", 1, 0, null);
+      expect(sessionQueries.recordRoundScore).toHaveBeenCalledWith("s1", 1, 0, null, 15000);
       expect(scoringService.calculateRoundScore).toHaveBeenCalledWith({
         selectedOption: null,
         correctOption: "A",

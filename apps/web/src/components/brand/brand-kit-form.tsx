@@ -1,5 +1,7 @@
 "use client";
 
+import { z } from "zod";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createApiClient } from "@/lib/api";
@@ -52,6 +54,19 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
     hasValidDuration &&
     Boolean(logoKey);
 
+const FormSchema = z.object({
+  name: z.string().min(1, "Brand name is required").max(100),
+  tagline: z.string().max(100).optional(),
+  brandStory: z.string().max(500).optional(),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Invalid primary color"),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Invalid secondary color"),
+  poolAmountUsdc: z.string().refine((val) => Number(val) >= 10, "Minimum pool amount is 10 USDC"),
+  durationHours: z.string().refine((val) => {
+    const num = Number(val);
+    return Number.isInteger(num) && num >= 1 && num <= 720;
+  }, "Duration must be between 1 and 720 hours"),
+});
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) {
@@ -60,27 +75,29 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
 
     setError(null);
 
+    const validationResult = FormSchema.safeParse(fields);
+    if (!validationResult.success) {
+      setError(validationResult.error.errors.map(err => err.message).join(", "));
+      return;
+    }
+
     try {
       await wrap(async () => {
         const api = createApiClient(apiToken);
         const [productImage1Key, productImage2Key] = productImageKeys;
 
+        // Note: The API expects S3 keys (logoKey, productImageKeys).
+        // The backend handles the conversion from these keys to public URLs after optimizing.
         const brandRes = await api.post("/brands", {
           name: fields.name,
           tagline: fields.tagline,
-          brandStory: fields.description,
+          brandStory: fields.brandStory,
           primaryColor: fields.primaryColor,
           secondaryColor: fields.secondaryColor,
           logoKey,
           usp: fields.tagline || undefined,
           productImage1Key: productImageKeys[0],
           productImage2Key: productImageKeys[1],
-          brandStory: fields.brandStory,
-          primaryColor: fields.primaryColor,
-          secondaryColor: fields.secondaryColor,
-          logoKey,
-          productImage1Key,
-          productImage2Key,
         });
 
         const brandId = brandRes.data.brand.id;
@@ -90,28 +107,22 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
           : 72;
         const endsAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
 
+        // Fix path if it should be /challenges instead of /brands/challenges or vice-versa
+        // Assuming backend uses /brands/challenges based on the routes
         const challengeRes = await api.post("/brands/challenges", {
           brandId,
           poolAmountUsdc: fields.poolAmountUsdc,
-          endsAt: new Date(
-            Date.now() + parseInt(fields.durationHours, 10) * 60 * 60 * 1000
-          ).toISOString(),
+          endsAt,
         });
 
-        const { depositInstructions } = challengeRes.data;
+        const { hotWalletAddress, memo, amount } = challengeRes.data.depositInstructions;
 
         router.push(
           `/brand/${brandId}?depositAddress=${encodeURIComponent(
-            depositInstructions.hotWalletAddress
-          )}&memo=${encodeURIComponent(depositInstructions.memo)}&amount=${encodeURIComponent(
-            depositInstructions.amount
+            hotWalletAddress ?? ""
+          )}&memo=${encodeURIComponent(memo ?? "")}&amount=${encodeURIComponent(
+            amount ?? ""
           )}`
-        );
-
-        const { hotWalletAddress, memo } = challengeRes.data.depositInstructions;
-
-        router.push(
-          `/brand/${brandId}?depositAddress=${encodeURIComponent(hotWalletAddress ?? "")}&memo=${encodeURIComponent(memo ?? "")}`
         );
       });
     } catch (err: any) {

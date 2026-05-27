@@ -103,7 +103,8 @@ export async function recordRoundScore(
   sessionId: string,
   round: 1 | 2 | 3,
   score: number,
-  answer: string | null = null
+  answer: string | null = null,
+  reactionTimeMs: number | null = null
 ): Promise<void> {
   if (![1, 2, 3].includes(round)) {
     throw new Error("Invalid round");
@@ -111,21 +112,24 @@ export async function recordRoundScore(
 
   const roundColumn = `round_${round}_score`;
   const answerColumn = `round_${round}_answer`;
+  const reactionColumn = `round_${round}_reaction_ms`;
 
   await query(
     `WITH upserted AS (
-       INSERT INTO session_round_scores (session_id, round, score)
-       VALUES ($1, $2, $3)
+       INSERT INTO session_round_scores (session_id, round, score, answer, reaction_time_ms)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (session_id, round) DO UPDATE
          SET score = EXCLUDED.score,
-             updated_at = NOW()
-       RETURNING session_id, score
+             answer = EXCLUDED.answer,
+             reaction_time_ms = EXCLUDED.reaction_time_ms
+       RETURNING session_id, score, answer, reaction_time_ms
      )
      UPDATE game_sessions
      SET ${roundColumn} = (SELECT score FROM upserted),
-         ${answerColumn} = $4
+         ${answerColumn} = (SELECT answer FROM upserted),
+         ${reactionColumn} = (SELECT reaction_time_ms FROM upserted)
      WHERE id = $1`,
-    [sessionId, round, score, answer]
+    [sessionId, round, score, answer, reactionTimeMs]
   );
 }
 
