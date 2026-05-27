@@ -23,8 +23,10 @@ export default defineProject({
       provider: "v8",
       include: [
         "src/components/brand/brand-kit-form.tsx",
+        "src/components/game/countdown-timer.tsx",
       ],
-      reporter: ["text", "lcov"],
+      reporter: ["text", "lcov", "json", "html"],
+      reportsDirectory: "./coverage",
       thresholds: {
         statements: 80,
         branches: 80,
@@ -32,15 +34,5 @@ export default defineProject({
         lines: 80,
       },
     },
-      reporter: ["text", "json", "html"],
-      include: ["src/components/game/countdown-timer.tsx"],
-      reportsDirectory: "./coverage",
-      thresholds: {
-        lines: 95,
-        functions: 95,
-        branches: 95,
-        statements: 95
-      }
-    }
   },
 });

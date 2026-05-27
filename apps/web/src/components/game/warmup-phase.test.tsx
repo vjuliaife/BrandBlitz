@@ -47,6 +47,9 @@ describe("WarmupPhase", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     apiPostMock.mockReset();
+    // warmup-start is called in the mount effect; return a resolved promise by
+    // default so tests that don't care about it don't crash on `.catch()`.
+    apiPostMock.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -156,11 +159,15 @@ describe("WarmupPhase", () => {
   it("shows a retry button after a network error and retries the request successfully", async () => {
     const onComplete = vi.fn();
 
+    // Slot 1: warmup-start (mount effect) → success
+    // Slot 2: warmup-complete (button click) → network failure
+    // Slot 3: warmup-complete (retry click) → success
     apiPostMock
-      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({}) // warmup-start
+      .mockRejectedValueOnce(new Error("Network error")) // first warmup-complete
       .mockResolvedValueOnce({
         data: { challengeToken: "token-retry" },
-      });
+      }); // retry warmup-complete
 
     render(<WarmupPhase challenge={challenge} apiToken="test-token" onComplete={onComplete} />);
 
@@ -180,7 +187,8 @@ describe("WarmupPhase", () => {
       await Promise.resolve();
     });
 
-    expect(apiPostMock).toHaveBeenCalledTimes(2);
+    // 3 calls total: warmup-start + 2 × warmup-complete (fail + retry)
+    expect(apiPostMock).toHaveBeenCalledTimes(3);
     expect(onComplete).toHaveBeenCalledWith("token-retry");
   });
 

@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { initSentry } from "./lib/sentry";
+void initSentry();
 import { connectDb, closeDb } from "./db";
 import { connectRedis, redis, startRedisEvictionMonitor } from "./lib/redis";
 import { createPayoutWorker } from "./queues/processors/payout.processor";

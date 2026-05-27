@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { logger } from "../lib/logger";
+import { captureExceptionSync } from "../lib/sentry";
 import { BadRequestError } from "@stellar/stellar-sdk";
 
 export interface ApiError extends Error {
@@ -44,6 +45,8 @@ export function errorHandler(
       method: req.method,
       url: req.url,
     });
+    // Report to Sentry with request context; sync so it doesn't delay the response.
+    captureExceptionSync(err, { method: req.method, url: req.url });
   }
 
   const payload: Record<string, unknown> = {

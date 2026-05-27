@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { CountdownTimer } from "./countdown-timer";
@@ -18,6 +18,9 @@ interface WarmupPhaseProps {
 export function WarmupPhase({ challenge, apiToken, onComplete }: WarmupPhaseProps) {
   const [unlocked, setUnlocked] = useState(false);
   const { submitting, wrap } = useSubmitting();
+  // Stable reference so CountdownTimer's effect doesn't re-run when unlocked
+  // flips true and this component re-renders with a new inline arrow function.
+  const handleTimerExpire = useCallback(() => setUnlocked(true), []);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
 
@@ -103,7 +106,7 @@ export function WarmupPhase({ challenge, apiToken, onComplete }: WarmupPhaseProp
         <div className="py-4">
           <CountdownTimer
             durationSeconds={WARMUP_MIN_SECONDS}
-            onExpire={() => setUnlocked(true)}
+            onExpire={handleTimerExpire}
           />
           {!unlocked && (
             <p className="text-center text-xs text-slate-500 mt-2">

@@ -1,6 +1,7 @@
+import { createHash } from "crypto";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { optimizeImage, StorageError } from "./optimize";
-import { s3 } from "./client";
+import { s3, uploadObject } from "./client";
 import sharp from "sharp";
 
 vi.mock("./client", () => ({
@@ -10,6 +11,7 @@ vi.mock("./client", () => ({
   BUCKETS: {
     BRAND_ASSETS: "brand-assets",
   },
+  uploadObject: vi.fn().mockResolvedValue(undefined),
 }));
 
 // We'll mock sharp for some tests but keep it real for others if needed.
@@ -32,6 +34,10 @@ describe("optimizeImage", () => {
   const dummyBuffer = Buffer.from("dummy");
 
   it("should process the image successfully (happy path)", async () => {
+    const optimizedContent = Buffer.from("optimized"); // matches the sharp mock's toBuffer result
+    const expectedHash = createHash("sha256").update(optimizedContent).digest("hex").slice(0, 8);
+    const expectedKey = `test-image-${expectedHash}.webp`;
+
     vi.mocked(s3.send).mockResolvedValueOnce({
       Body: {
         transformToByteArray: async () => dummyBuffer,
@@ -40,9 +46,19 @@ describe("optimizeImage", () => {
 
     const optimizedKey = await optimizeImage("test-image.png", "brand-logo");
 
-    expect(optimizedKey).toBe("test-image.webp");
-    expect(s3.send).toHaveBeenCalledTimes(2); // GetObjectCommand, PutObjectCommand
+    // Key must contain a content hash and use .webp extension
+    expect(optimizedKey).toBe(expectedKey);
+    // s3.send called once only (GetObjectCommand); upload goes through uploadObject
+    expect(s3.send).toHaveBeenCalledTimes(1);
     expect(sharp).toHaveBeenCalledWith(dummyBuffer);
+    // uploadObject called with immutable: true so Cache-Control is set
+    expect(uploadObject).toHaveBeenCalledWith({
+      bucket: "brand-assets",
+      key: expectedKey,
+      body: optimizedContent,
+      contentType: "image/webp",
+      immutable: true,
+    });
   });
 
   it("should throw a StorageError if the object body is null/undefined (missing object)", async () => {

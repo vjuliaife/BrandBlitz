@@ -50,7 +50,7 @@
     "prettier-plugin-tailwindcss": "0.6.12",
     "tailwindcss": "4.2.2",
     "typescript": "6.0.2",
-    "fast-check": "3.25.0",
+    "fast-check": "4.8.0",
     "vitest": "4.1.2"
   }
 }

@@ -17,6 +17,23 @@ export interface RefreshPayload { sub: string; email: string; type: "refresh"; j
 function accessSecret() { return config.JWT_SECRET; }
 function refreshSecret() { return config.JWT_REFRESH_SECRET ?? config.JWT_SECRET; }
 
+/**
+ * Returns the previous JWT secret (set as JWT_SECRET_PREVIOUS) that is still
+ * accepted during the dual-verify rotation window.  Tokens signed with the old
+ * secret remain valid for the access-token TTL (15 min) after the new secret
+ * is deployed, allowing zero-downtime rotation without forced sign-outs.
+ *
+ * Rotation steps:
+ *   1. Generate a new secret.
+ *   2. Set JWT_SECRET_PREVIOUS = <old secret>, JWT_SECRET = <new secret>.
+ *   3. Deploy — both secrets are accepted simultaneously.
+ *   4. After 15 min (access TTL) all live tokens are signed with the new secret.
+ *   5. Remove JWT_SECRET_PREVIOUS from the environment.
+ */
+function previousAccessSecret(): string | undefined {
+  return config.JWT_SECRET_PREVIOUS;
+}
+
 export function signAccessToken(user: { id: string; email: string }): string {
   return jwt.sign({ sub: user.id, email: user.email, jti: randomUUID() }, accessSecret(), { expiresIn: ACCESS_TOKEN_TTL });
 }
@@ -25,8 +42,22 @@ export function signRefreshToken(user: { id: string; email: string }): string {
   return jwt.sign({ sub: user.id, email: user.email, type: "refresh", jti: randomUUID() }, refreshSecret(), { expiresIn: REFRESH_TOKEN_TTL });
 }
 
+/**
+ * Verify an access token.  Tries the current secret first; if that fails and
+ * JWT_SECRET_PREVIOUS is set, attempts verification with the previous secret
+ * to support zero-downtime rotation (dual-verify window = access-token TTL).
+ */
 export function verifyAccessToken(token: string): AccessPayload {
-  return jwt.verify(token, accessSecret()) as AccessPayload;
+  try {
+    return jwt.verify(token, accessSecret()) as AccessPayload;
+  } catch (primaryError) {
+    const prev = previousAccessSecret();
+    if (prev) {
+      // May throw — let the error propagate so callers see a proper JWT error
+      return jwt.verify(token, prev) as AccessPayload;
+    }
+    throw primaryError;
+  }
 }
 
 export function verifyRefreshToken(token: string): RefreshPayload {
