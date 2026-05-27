@@ -1,130 +1,52 @@
-"use client";
-
 import * as React from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { WarmupPhase } from "@/components/game/warmup-phase";
-import { ChallengeRound } from "@/components/game/challenge-round";
-import { ResultScreen } from "@/components/game/result-screen";
-import { createApiClient, type Challenge, type ChallengeQuestion } from "@/lib/api";
-import { TOTAL_ROUNDS } from "@/components/game/constants";
-
-type GamePhase = "loading" | "warmup" | "challenge" | "result";
+import type { Metadata } from "next";
+import { ChallengePage } from "./challenge-page";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default function ChallengePage({ params }: PageProps) {
-  const { id: challengeId } = React.use(params);
-  const { data: session, status } = useSession();
-  const router = useRouter();
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
 
-  const [challenge, setChallenge] = React.useState<Challenge | null>(null);
-  const [questions, setQuestions] = React.useState<ChallengeQuestion[]>([]);
-  const [phase, setPhase] = React.useState<GamePhase>("loading");
-  const [currentRound, setCurrentRound] = React.useState<1 | 2 | 3>(1);
-  const [scores, setScores] = React.useState<number[]>([]);
+  let brandName = "BrandBlitz";
+  let prizePool = "0";
 
-  React.useEffect(() => {
-    if (!challengeId) return;
-    if (status === "loading") return;
-    if (!session) {
-      router.push(`/login?callbackUrl=/challenge/${challengeId}`);
-      return;
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost/api";
+    const res = await fetch(`${apiUrl}/challenges/${id}`, { next: { revalidate: 60 } });
+    if (res.ok) {
+      const data = await res.json();
+      const c = data.challenge;
+      brandName = c.brand_name ?? brandName;
+      prizePool = c.pool_amount_usdc ?? prizePool;
     }
+  } catch {
+    // Use defaults
+  }
 
-    const apiToken = session.apiToken;
-    const api = createApiClient(apiToken);
+  const title = `${brandName} Challenge — Win ${prizePool} USDC`;
+  const description = "Compete in a 45-second brand challenge. Top players win USDC instantly.";
+  const ogImageUrl = `/api/og/challenge/${id}`;
 
-    api.get(`/challenges/${challengeId}`).then((res) => {
-      setChallenge(res.data.challenge);
-      setQuestions(res.data.questions);
-
-      // Start warmup session on server
-      api
-        .post(`/sessions/${challengeId}/warmup-start`, {
-          deviceId: undefined, // FingerprintJS visitorId added via middleware
-        })
-        .then(() => {
-          setPhase("warmup");
-        });
-    });
-  }, [challengeId, session, status, router]);
-
-  const handleWarmupComplete = async (token: string) => {
-    const apiToken = session?.apiToken;
-    const api = createApiClient(apiToken);
-
-    await api.post(`/sessions/${challengeId}/start`, { challengeToken: token });
-
-    setPhase("challenge");
-    setCurrentRound(1);
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: title }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImageUrl],
+    },
   };
+}
 
-  const handleAnswer = async (option: "A" | "B" | "C" | "D" | null, reactionTimeMs: number) => {
-    const apiToken = session?.apiToken;
-    const api = createApiClient(apiToken);
-
-    const res = await api.post(`/sessions/${challengeId}/answer/${currentRound}`, {
-      selectedOption: option,
-      reactionTimeMs,
-    });
-
-    setScores((prev) => [...prev, res.data.score]);
-
-    if (currentRound < TOTAL_ROUNDS) {
-      setCurrentRound((r) => (r + 1) as 1 | 2 | 3);
-    } else {
-      setPhase("result");
-    }
-  };
-
-  if (phase === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-[var(--muted-foreground)]">Loading challenge...</div>
-      </div>
-    );
-  }
-
-  if (phase === "warmup" && challenge) {
-    return (
-      <WarmupPhase
-        challenge={challenge}
-        apiToken={session.apiToken}
-        onComplete={(token) => {
-          void handleWarmupComplete(token);
-        }}
-      />
-    );
-  }
-
-  if (phase === "challenge" && challenge) {
-    const question = questions[currentRound - 1];
-    if (!question) return null;
-
-    return (
-      <div className="min-h-screen p-6">
-        <ChallengeRound
-          question={question}
-          round={currentRound}
-          onAnswer={handleAnswer}
-          brandLogoUrl={challenge.logo_url ?? undefined}
-        />
-      </div>
-    );
-  }
-
-  if (phase === "result") {
-    const totalScore = scores.reduce((a, b) => a + b, 0);
-    return (
-      <ResultScreen
-        totalScore={totalScore}
-        challengeId={challengeId}
-      />
-    );
-  }
-
-  return null;
+export default function Page({ params }: PageProps) {
+  return <ChallengePage params={params} />;
 }

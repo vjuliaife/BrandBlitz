@@ -8,25 +8,27 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import Image from "next/image";
 import type { UserProfile } from "@/lib/api";
+import { BadgeGrid, type Badge as UserBadge } from "@/components/gamification/badge-grid";
 
 interface ProfilePageProps {
   params: Promise<{ username: string }>;
 }
 
-async function getUserProfile(
-  username: string
-): Promise<{ user: UserProfile | null; failed: boolean }> {
+async function getUserProfile(username: string): Promise<{ user: UserProfile | null; failed: boolean }> {
   try {
     const res = await api.get(`/users/profile/${username}`);
-    return {
-      user: res.data.user,
-      failed: false,
-    };
+    return { user: res.data.user, failed: false };
   } catch {
-    return {
-      user: null,
-      failed: true,
-    };
+    return { user: null, failed: true };
+  }
+}
+
+async function getUserBadges(userId: string): Promise<UserBadge[]> {
+  try {
+    const res = await api.get(`/users/${userId}/badges`);
+    return res.data.badges ?? [];
+  } catch {
+    return [];
   }
 }
 
@@ -40,11 +42,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
         <EmptyState
           title="Couldn't load profile"
           description="We couldn't load this profile right now. Please try again."
-          action={
-            <Link href={`/profile/${username}`}>
-              <Button variant="outline">Try Again</Button>
-            </Link>
-          }
+          action={<Link href={`/profile/${username}`}><Button variant="outline">Try Again</Button></Link>}
         />
       </main>
     );
@@ -53,20 +51,15 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
   if (!user) notFound();
 
   const recentSessions = user.recentSessions ?? [];
+  const badges = user.id ? await getUserBadges(user.id) : [];
+  const earnedIds = badges.filter((b) => b.earned).map((b) => b.id);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       {/* Profile header */}
       <div className="mb-10 flex items-center gap-6">
         {user.avatarUrl ? (
-          <Image
-            src={user.avatarUrl}
-            alt={user.displayName}
-            width={80}
-            height={80}
-            sizes="80px"
-            className="h-20 w-20 rounded-full object-cover"
-          />
+          <Image src={user.avatarUrl} alt={user.displayName} width={80} height={80} sizes="80px" className="h-20 w-20 rounded-full object-cover" />
         ) : (
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[var(--primary)] text-2xl font-bold text-white">
             {user.displayName.charAt(0).toUpperCase()}
@@ -75,11 +68,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
         <div>
           <h1 className="text-2xl font-bold">{user.displayName}</h1>
           <p className="text-[var(--muted-foreground)]">@{user.username}</p>
-          {user.league && (
-            <Badge variant={user.league} className="mt-2">
-              {user.league} League
-            </Badge>
-          )}
+          {user.league && <Badge variant={user.league} className="mt-2">{user.league} League</Badge>}
         </div>
       </div>
 
@@ -99,32 +88,30 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
         ))}
       </div>
 
+      {/* Badges */}
+      {badges.length > 0 && (
+        <Card className="mb-8">
+          <CardHeader><CardTitle>Badges</CardTitle></CardHeader>
+          <CardContent>
+            <BadgeGrid badges={badges} previouslyEarned={earnedIds} />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Recent activity */}
       {recentSessions.length > 0 ? (
         <Card>
-          <CardHeader>
-            <CardTitle>Recent Challenges</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Recent Challenges</CardTitle></CardHeader>
           <CardContent className="p-0">
             <table className="w-full text-sm">
               <tbody>
-                {recentSessions.map(
-                  (session: {
-                    id: string;
-                    brandName: string;
-                    totalScore: number;
-                    rank?: number;
-                    completedAt: string;
-                  }) => (
-                    <tr key={session.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="px-6 py-3 font-medium">{session.brandName}</td>
-                      <td className="px-6 py-3 text-right">{formatScore(session.totalScore)}</td>
-                      <td className="px-6 py-3 text-right text-[var(--muted-foreground)]">
-                        {session.rank ? `#${session.rank}` : "—"}
-                      </td>
-                    </tr>
-                  )
-                )}
+                {recentSessions.map((session) => (
+                  <tr key={session.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-6 py-3 font-medium">{session.brandName}</td>
+                    <td className="px-6 py-3 text-right">{formatScore(session.totalScore)}</td>
+                    <td className="px-6 py-3 text-right text-[var(--muted-foreground)]">{session.rank ? `#${session.rank}` : "—"}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </CardContent>
@@ -133,11 +120,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
         <EmptyState
           title="No history yet"
           description="Play a challenge to start building your stats."
-          action={
-            <Link href="/challenge">
-              <Button>Browse Challenges</Button>
-            </Link>
-          }
+          action={<Link href="/challenge"><Button>Browse Challenges</Button></Link>}
         />
       )}
     </main>
