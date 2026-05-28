@@ -1,0 +1,66 @@
+name: Contracts CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - "contracts/**"
+  pull_request:
+    paths:
+      - "contracts/**"
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned versions — update these when the workspace Cargo.toml bumps soroban-sdk.
+  RUST_VERSION: "1.85.0"
+  STELLAR_CLI_VERSION: "22.8.0"
+
+jobs:
+  build-test:
+    name: Build & test escrow contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32v1-none
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+          key: contracts-${{ env.RUST_VERSION }}-${{ env.STELLAR_CLI_VERSION }}
+
+      - name: Install stellar-cli ${{ env.STELLAR_CLI_VERSION }}
+        run: cargo install stellar-cli --version ${{ env.STELLAR_CLI_VERSION }} --locked
+        # stellar-cli binary lands in ~/.cargo/bin which Swatinem/rust-cache persists,
+        # so this step is skipped on cache hits.
+
+      - name: Build escrow contract (WASM)
+        working-directory: contracts
+        run: stellar contract build
+        # stellar contract build targets wasm32v1-none (soroban-sdk >= 21).
+        # Artefact: contracts/target/wasm32v1-none/release/escrow.wasm
+
+      - name: Verify WASM artefact exists
+        working-directory: contracts
+        run: ls -lh target/wasm32v1-none/release/*.wasm
+
+      - name: Run contract tests
+        working-directory: contracts
+        run: cargo test
+
+      - name: Upload WASM artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: escrow-wasm-${{ github.sha }}
+          path: contracts/target/wasm32v1-none/release/*.wasm
+          retention-days: 30
+          if-no-files-found: error

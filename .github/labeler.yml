@@ -1,0 +1,44 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/api/**"
+          - "packages/storage/**"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "apps/web/**"
+
+stellar:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "contracts/**"
+          - "packages/stellar/**"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "docker-compose*.yml"
+          - "nginx/**"
+          - "scripts/**"
+          - "Makefile"
+          - "*.dockerfile"
+          - "**/*.dockerfile"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "*.md"
+          - "**/*.md"
+
+testing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "e2e/**"
+          - "tests/**"
+          - "**/*.test.ts"
+          - "**/*.spec.ts"
+          - "**/*.test.tsx"
+          - "**/*.spec.tsx"

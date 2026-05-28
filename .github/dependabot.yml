@@ -1,0 +1,77 @@
+version: 2
+
+updates:
+  # ── npm (pnpm workspace) ──────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    groups:
+      stellar-packages:
+        patterns:
+          - "@stellar/*"
+          - "@stellar-base/*"
+          - "@stellar/stellar-sdk"
+      soroban-packages:
+        patterns:
+          - "@soroban-*"
+          - "soroban-*"
+      sentry:
+        patterns:
+          - "@sentry/*"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+    ignore:
+      # Major bumps always need human review — dependabot-automerge.yml skips them.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── Docker (api image) ───────────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: "/apps/api"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+
+  # ── Docker (web image) ───────────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: "/apps/web"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+
+  # ── GitHub Actions ───────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    groups:
+      actions-core:
+        patterns:
+          - "actions/*"
+      docker-actions:
+        patterns:
+          - "docker/*"
+
+  # ── Rust / Cargo ─────────────────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: "/contracts"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    groups:
+      soroban:
+        patterns:
+          - "soroban-*"

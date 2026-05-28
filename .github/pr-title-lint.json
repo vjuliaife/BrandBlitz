@@ -1,0 +1,20 @@
+{
+  "types": [
+    "feat",
+    "fix",
+    "chore",
+    "docs",
+    "refactor",
+    "test",
+    "ci",
+    "perf",
+    "style",
+    "revert",
+    "build"
+  ],
+  "requireScope": false,
+  "subjectMinLength": 3,
+  "subjectMaxLength": 80,
+  "subjectPattern": ".+",
+  "subjectPatternError": "PR title subject must not be empty"
+}
