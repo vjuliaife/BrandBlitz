@@ -44,11 +44,37 @@ export async function findPendingErasureRequest(
   return result.rows[0] ?? null;
 }
 
+/**
+ * Find a pending erasure request that was self-initiated (admin_id IS NULL).
+ * Used by the self-serve cancel endpoint so users cannot see or interact with
+ * admin-initiated legal erasure requests.
+ */
+export async function findPendingSelfErasureRequest(
+  userId: string
+): Promise<GdprErasureRequest | null> {
+  const result = await query<GdprErasureRequest>(
+    `SELECT * FROM gdpr_erasure_requests
+     WHERE user_id = $1
+       AND admin_id IS NULL
+       AND cancelled_at IS NULL
+       AND executed_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Cancel a self-initiated erasure request (admin_id IS NULL).
+ * Admin-initiated requests may only be cancelled through an admin endpoint.
+ */
 export async function cancelErasureRequest(userId: string): Promise<void> {
   await query(
     `UPDATE gdpr_erasure_requests
      SET cancelled_at = NOW(), updated_at = NOW()
      WHERE user_id = $1
+       AND admin_id IS NULL
        AND cancelled_at IS NULL
        AND executed_at IS NULL`,
     [userId]

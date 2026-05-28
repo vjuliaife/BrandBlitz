@@ -26,8 +26,11 @@ vi.mock("../../db/queries/users", () => ({
   findUserById: mockFindUserById,
 }));
 
+const mockFindPendingSelfErasureRequest = vi.fn();
+
 vi.mock("../../db/queries/gdpr", () => ({
   findPendingErasureRequest: mockFindPendingErasureRequest,
+  findPendingSelfErasureRequest: mockFindPendingSelfErasureRequest,
   createErasureRequest: mockCreateErasureRequest,
   cancelErasureRequest: mockCancelErasureRequest,
 }));
@@ -161,8 +164,8 @@ describe("POST /me/delete-account", () => {
 });
 
 describe("DELETE /me/delete-account", () => {
-  it("returns 200 and cancels request when one exists", async () => {
-    mockFindPendingErasureRequest.mockResolvedValueOnce({ id: "req-abc" });
+  it("returns 200 and cancels a self-initiated request", async () => {
+    mockFindPendingSelfErasureRequest.mockResolvedValueOnce({ id: "req-abc", admin_id: null });
     mockCancelErasureRequest.mockResolvedValueOnce(undefined);
     mockCancelGdprErasure.mockResolvedValueOnce(undefined);
 
@@ -175,8 +178,19 @@ describe("DELETE /me/delete-account", () => {
     expect(mockCancelGdprErasure).toHaveBeenCalledWith("user-123");
   });
 
-  it("returns 404 when no pending request exists", async () => {
-    mockFindPendingErasureRequest.mockResolvedValueOnce(null);
+  it("returns 404 when no self-initiated pending request exists", async () => {
+    mockFindPendingSelfErasureRequest.mockResolvedValueOnce(null);
+
+    await request(app)
+      .delete("/me/delete-account")
+      .expect(404);
+
+    expect(mockCancelErasureRequest).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when only an admin-initiated request exists (not cancellable by user)", async () => {
+    // findPendingSelfErasureRequest excludes admin_id IS NOT NULL rows
+    mockFindPendingSelfErasureRequest.mockResolvedValueOnce(null);
 
     await request(app)
       .delete("/me/delete-account")

@@ -253,6 +253,35 @@ describe("upload routes integration", () => {
     expect(response.body.error).toBe("SVG contains disallowed content");
   });
 
+  it("POST /upload/verify returns 400 for SVG with entity-encoded javascript: URI", async () => {
+    // &#106;avascript: decodes to javascript: — must be caught after entity decoding
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><a href="&#106;avascript:alert(1)"><text>x</text></a></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/encoded.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+  });
+
+  it("POST /upload/verify returns 400 for SVG with data: href", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/svg+xml,<svg onload=alert(1)/>"/></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/datauri.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+  });
+
   it("POST /upload/verify returns 200 for a valid SVG without dangerous content", async () => {
     mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
     const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="#6366f1"/></svg>');

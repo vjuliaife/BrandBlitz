@@ -69,29 +69,44 @@ function detectMime(buf: Buffer): AllowedMime | null {
 }
 
 /**
- * SVG XSS patterns — any match causes the file to be rejected.
- * A single regex is not sufficient; SVGs support many execution vectors:
- *   - event handlers on any element (onload, onerror, onclick, …)
- *   - javascript: / vbscript: URIs in href/src/action/xlink:href
- *   - <foreignObject> embeds an HTML namespace (and its event model)
- *   - <use xlink:href="http://…"> pulls in external SVG fragments
- *   - data:text/html and data:text/xml URIs can carry executable HTML
- *   - <script> elements
+ * Decode common XML/HTML character references so encoded payloads like
+ * `&#106;avascript:` or `&#x6A;avascript:` are normalised before scanning.
+ * Only decodes numeric references; named references (&amp; etc.) that
+ * are safe in SVG attribute values are left intact.
+ */
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#([0-9]+);/g, (_, dec) =>
+      String.fromCodePoint(parseInt(dec, 10))
+    );
+}
+
+/**
+ * SVG XSS patterns applied after entity decoding.
  *
- * The full SVG content is scanned (not just the first 8 KiB) because
- * payloads can appear anywhere in the file.
+ * Blocklist limitations are acknowledged: XML namespace tricks,
+ * CSS-based attacks in <style>, and novel parser differentials are not
+ * covered here. For full mitigation, serve user-uploaded SVGs from a
+ * separate cookieless origin with `Content-Disposition: attachment` and
+ * `Content-Security-Policy: default-src 'none'; sandbox`.
  */
 const SVG_DANGEROUS_PATTERNS: RegExp[] = [
   /<script/i,
-  /\bon\w+\s*=/i,                         // onload=, onclick=, onerror=, …
-  /javascript\s*:/i,                       // javascript: URIs
-  /vbscript\s*:/i,                         // vbscript: URIs (IE legacy)
-  /<foreignObject/i,                       // HTML namespace embedding
-  /data\s*:\s*text\/(html|xml)/i,          // data:text/html and data:text/xml
+  /\bon\w+\s*=/i,                               // event handlers (onload=, onerror=, …)
+  /javascript\s*:/i,                             // javascript: URIs
+  /vbscript\s*:/i,                               // vbscript: URIs (IE legacy)
+  /<foreignObject/i,                             // HTML namespace embedding
+  /\bhref\s*=\s*["']?\s*data\s*:/i,             // data: URIs in any href
+  /\bsrc\s*=\s*["']?\s*data\s*:/i,              // data: URIs in any src
+  /\baction\s*=\s*["']?\s*data\s*:/i,           // data: URIs in form action
   /<use[^>]+(?:xlink:)?href\s*=\s*["']https?:/i, // external <use> references
 ];
 
-function isSvgSafe(content: string): boolean {
+function isSvgSafe(rawContent: string): boolean {
+  const content = decodeXmlEntities(rawContent);
   return !SVG_DANGEROUS_PATTERNS.some((pattern) => pattern.test(content));
 }
 

@@ -6,6 +6,7 @@ import { findUserById } from "../../db/queries/users";
 import {
   createErasureRequest,
   findPendingErasureRequest,
+  findPendingSelfErasureRequest,
   cancelErasureRequest,
 } from "../../db/queries/gdpr";
 import {
@@ -45,10 +46,12 @@ router.post("/", authenticate, async (req, res) => {
 
 /**
  * DELETE /me/delete-account
- * Cancel a pending account deletion within the 30-day grace period.
+ * Cancel a self-initiated account deletion within the 30-day grace period.
+ * Admin-initiated legal erasures are not visible here and must be cancelled
+ * through the admin endpoint.
  */
 router.delete("/", authenticate, async (req, res) => {
-  const pending = await findPendingErasureRequest(req.user!.sub);
+  const pending = await findPendingSelfErasureRequest(req.user!.sub);
   if (!pending) throw createError("No pending deletion request found", 404);
 
   await cancelErasureRequest(req.user!.sub);
