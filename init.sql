@@ -85,7 +85,10 @@ CREATE TABLE challenges (
   payout_tx_hashes    TEXT[],
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT challenges_ends_after_starts CHECK (ends_at IS NULL OR ends_at > starts_at)
+  CONSTRAINT challenges_ends_after_starts CHECK (ends_at IS NULL OR ends_at > starts_at),
+  CONSTRAINT challenges_pool_amount_positive CHECK (
+    status IN ('pending_deposit', 'cancelled') OR pool_amount_stroops > 0
+  )
 );
 
 CREATE INDEX idx_challenges_brand_id      ON challenges (brand_id);
@@ -122,7 +125,7 @@ CREATE INDEX idx_challenge_questions_challenge ON challenge_questions (challenge
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE game_sessions (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id               UUID REFERENCES users(id) ON DELETE SET NULL,
   challenge_id          UUID NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
   device_id             TEXT,
   ip_address            INET,
@@ -149,7 +152,8 @@ CREATE TABLE game_sessions (
   fraud_flags           TEXT[]  NOT NULL DEFAULT '{}',
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id, challenge_id)
+  UNIQUE (user_id, challenge_id),
+  CONSTRAINT game_sessions_score_range CHECK (total_score >= 0 AND total_score <= 450)
 );
 
 CREATE INDEX idx_game_sessions_challenge_id ON game_sessions (challenge_id);
@@ -177,7 +181,7 @@ CREATE INDEX idx_round_scores_session ON session_round_scores (session_id);
 CREATE TABLE payouts (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   challenge_id     UUID NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
-  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id          UUID REFERENCES users(id) ON DELETE SET NULL,
   session_id       UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
   amount_stroops   BIGINT NOT NULL DEFAULT 0,
   status           TEXT NOT NULL DEFAULT 'pending'
@@ -188,7 +192,8 @@ CREATE TABLE payouts (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (challenge_id, user_id),
   CONSTRAINT payouts_failed_requires_message
-    CHECK ((status = 'failed') = (LENGTH(error_message) > 0))
+    CHECK ((status = 'failed') = (LENGTH(error_message) > 0)),
+  CONSTRAINT payouts_amount_positive CHECK (amount_stroops > 0)
 );
 
 CREATE INDEX idx_payouts_challenge_id ON payouts (challenge_id);
@@ -201,7 +206,7 @@ CREATE INDEX idx_payouts_status       ON payouts (status);
 CREATE TABLE fraud_flags (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id   UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
-  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   flag_type    TEXT NOT NULL,
   details      JSONB,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -315,3 +320,24 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_log_actor_id   ON audit_log (actor_id);
 CREATE INDEX idx_audit_log_entity     ON audit_log (entity, entity_key);
 CREATE INDEX idx_audit_log_created_at ON audit_log (created_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- GDPR ERASURE REQUESTS (tracks 30-day grace period before anonymisation)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE gdpr_erasure_requests (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  execute_at   TIMESTAMPTZ NOT NULL,
+  cancelled_at TIMESTAMPTZ,
+  executed_at  TIMESTAMPTZ,
+  admin_id     UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_gdpr_erasure_user_id ON gdpr_erasure_requests (user_id);
+
+CREATE TRIGGER gdpr_erasure_requests_updated_at
+  BEFORE UPDATE ON gdpr_erasure_requests
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();

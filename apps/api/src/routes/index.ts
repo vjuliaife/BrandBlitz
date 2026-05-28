@@ -9,6 +9,8 @@ import leaderboardRoutes from "./leaderboard";
 import webhooksRoutes from "./webhooks";
 import leaguesRoutes from "./leagues";
 import adminConfigRoutes from "./admin/config";
+import adminUsersRoutes from "./admin/users";
+import deleteAccountRoutes from "./me/delete-account";
 
 export function registerRoutes(app: Express): void {
   app.use("/auth", authRoutes);
@@ -21,4 +23,6 @@ export function registerRoutes(app: Express): void {
   app.use("/webhooks", webhooksRoutes);
   app.use("/leagues", leaguesRoutes);
   app.use("/admin/config", adminConfigRoutes);
+  app.use("/admin/users", adminUsersRoutes);
+  app.use("/me/delete-account", deleteAccountRoutes);
 }

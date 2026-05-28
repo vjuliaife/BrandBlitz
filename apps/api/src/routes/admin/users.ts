@@ -1,0 +1,58 @@
+import { Router } from "express";
+import { z } from "zod";
+import { authenticate } from "../../middleware/authenticate";
+import { createError } from "../../middleware/error";
+import { findUserById } from "../../db/queries/users";
+import {
+  createErasureRequest,
+  findPendingErasureRequest,
+} from "../../db/queries/gdpr";
+import { enqueueGdprErasure } from "../../queues/gdpr-erasure.queue";
+import { query } from "../../db/index";
+
+const router = Router();
+
+router.use(authenticate);
+
+router.use(async (req, _res, next) => {
+  const user = await findUserById(req.user!.sub);
+  if (!user || user.role !== "admin") throw createError("Forbidden", 403, "FORBIDDEN");
+  next();
+});
+
+/**
+ * POST /admin/users/:userId/erase
+ * Trigger a GDPR right-to-erasure for a specific user on behalf of legal/compliance.
+ * Subject to the same 30-day grace period as a self-serve request.
+ * Every invocation is audit-logged.
+ */
+router.post("/:userId/erase", async (req, res) => {
+  const { userId } = z.object({ userId: z.string().uuid() }).parse(req.params);
+
+  const target = await findUserById(userId);
+  if (!target) throw createError("User not found", 404);
+
+  const existing = await findPendingErasureRequest(userId);
+  if (existing) throw createError("A deletion request is already pending for this user", 409);
+
+  const erasureRequest = await createErasureRequest(userId, req.user!.sub);
+  await enqueueGdprErasure({ userId, requestId: erasureRequest.id });
+
+  await query(
+    `INSERT INTO audit_log (actor_id, action, entity, entity_key, after)
+     VALUES ($1, 'gdpr_erasure_request', 'user', $2, $3)`,
+    [
+      req.user!.sub,
+      userId,
+      JSON.stringify({ requestId: erasureRequest.id, executeAt: erasureRequest.execute_at }),
+    ]
+  );
+
+  res.status(202).json({
+    message: "GDPR erasure request created. Data will be anonymised after 30 days.",
+    requestId: erasureRequest.id,
+    executeAt: erasureRequest.execute_at,
+  });
+});
+
+export default router;

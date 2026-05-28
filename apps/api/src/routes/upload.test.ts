@@ -121,8 +121,14 @@ describe("upload routes integration", () => {
     );
   });
 
-  it("POST /upload/verify returns 200 when the object exists", async () => {
-    mockSend.mockResolvedValueOnce({});
+  it("POST /upload/verify returns 200 when the object exists and MIME matches", async () => {
+    // HeadObject → ContentType: image/png
+    mockSend.mockResolvedValueOnce({ ContentType: "image/png" });
+    // GetObject Range → PNG magic bytes
+    const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    mockSend.mockResolvedValueOnce({
+      Body: { transformToByteArray: async () => pngMagic },
+    });
 
     const response = await request(app)
       .post("/upload/verify")
@@ -133,7 +139,6 @@ describe("upload routes integration", () => {
       exists: true,
       publicUrl: "https://public/brand-assets/logos/test-key",
     });
-    expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend.mock.calls[0][0]?.input).toMatchObject({
       Bucket: "brand-assets",
       Key: "logos/test-key",
@@ -149,5 +154,144 @@ describe("upload routes integration", () => {
       .expect(404);
 
     expect(response.body.error).toBe("File not found in storage");
+  });
+
+  // ── MIME magic-byte validation (issue #116) ────────────────────────────────
+
+  it("POST /upload/verify returns 200 for a valid PNG (magic bytes match)", async () => {
+    // HeadObject → ContentType: image/png
+    mockSend.mockResolvedValueOnce({ ContentType: "image/png" });
+    // GetObject Range → PNG magic bytes
+    const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    mockSend.mockResolvedValueOnce({
+      Body: { transformToByteArray: async () => pngMagic },
+    });
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/valid.png" })
+      .expect(200);
+
+    expect(response.body.exists).toBe(true);
+  });
+
+  it("POST /upload/verify returns 400 and deletes when magic bytes mismatch declared MIME", async () => {
+    // HeadObject → ContentType: image/png
+    mockSend.mockResolvedValueOnce({ ContentType: "image/png" });
+    // GetObject Range → JPEG magic bytes (mismatch!)
+    const jpegMagic = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    mockSend.mockResolvedValueOnce({
+      Body: { transformToByteArray: async () => jpegMagic },
+    });
+    // DeleteObject call
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/bad.png" })
+      .expect(400);
+
+    expect(response.body.error).toBe("File content does not match declared content type");
+    // Verify DeleteObjectCommand was called (3rd mockSend call)
+    expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("POST /upload/verify returns 400 and deletes SVG containing <script>", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/evil.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+    expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("POST /upload/verify returns 400 for SVG with event handler (onload=)", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/onload.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+  });
+
+  it("POST /upload/verify returns 400 for SVG with javascript: URI", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><text>click</text></a></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/jsuri.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+  });
+
+  it("POST /upload/verify returns 400 for SVG with <foreignObject>", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><body onload="alert(1)"/></foreignObject></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/foreign.svg" })
+      .expect(400);
+
+    expect(response.body.error).toBe("SVG contains disallowed content");
+  });
+
+  it("POST /upload/verify returns 200 for a valid SVG without dangerous content", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/svg+xml" });
+    const svgContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="#6366f1"/></svg>');
+    mockSend.mockResolvedValueOnce({ Body: { transformToByteArray: async () => svgContent } });
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/clean.svg" })
+      .expect(200);
+
+    expect(response.body.exists).toBe(true);
+  });
+
+  it("POST /upload/verify returns 200 for a valid JPEG", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "image/jpeg" });
+    const jpegMagic = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+    mockSend.mockResolvedValueOnce({
+      Body: { transformToByteArray: async () => jpegMagic },
+    });
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "avatars/photo.jpg" })
+      .expect(200);
+
+    expect(response.body.exists).toBe(true);
+  });
+
+  it("POST /upload/verify returns 400 and deletes when declared MIME is not in the allow-list", async () => {
+    mockSend.mockResolvedValueOnce({ ContentType: "application/pdf" });
+    mockSend.mockResolvedValueOnce({});
+
+    const response = await request(app)
+      .post("/upload/verify")
+      .send({ key: "logos/document.pdf" })
+      .expect(400);
+
+    expect(response.body.error).toBe("Declared content type is not allowed");
+    // DeleteObject was called
+    expect(mockSend).toHaveBeenCalledTimes(2);
   });
 });

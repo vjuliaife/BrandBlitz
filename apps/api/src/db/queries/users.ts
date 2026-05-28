@@ -111,3 +111,13 @@ export async function markPhoneVerified(userId: string, phoneHash: string): Prom
     [phoneHash, userId]
   );
 }
+
+/**
+ * Permanently remove a user row.
+ * WARNING: DBA-only operation. Use GDPR anonymisation (anonymizeUser) for
+ * right-to-erasure requests. Hard-delete is blocked while fraud_flags rows
+ * reference this user (ON DELETE RESTRICT).
+ */
+export async function hardDeleteUser(userId: string): Promise<void> {
+  await query("DELETE FROM users WHERE id = $1", [userId]);
+}
